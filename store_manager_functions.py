@@ -8,7 +8,9 @@ from sklearn.preprocessing import MinMaxScaler
 
 def lstm_prediction(df, base_product, variation_detail, seq_length=10, epochs=100, batch_size=16):
     
-    lstm = df[(df['Base Product'] == base_product) & (df['Variation Detail'] == variation_detail)].copy()
+    df_1 = df[(df['Base Product'] == base_product) & (df['Variation Detail'] == variation_detail)].copy()
+    
+    lstm = df_1.copy()
     
     # Preprocess data
     low_q = lstm['Quantity'].quantile(0.15)
@@ -85,7 +87,7 @@ def lstm_prediction(df, base_product, variation_detail, seq_length=10, epochs=10
             'Predicted Quantity': pred
         })
     predictions_df = pd.DataFrame(predicted_data)
-    output_df = lstm.merge(predictions_df, on=['Date'], how='left')
+    output_df = df_1.merge(predictions_df, on=['Date'], how='left')
 
     return output_df
 
