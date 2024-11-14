@@ -12,6 +12,7 @@ def load_data():
     query = "SELECT * FROM product_data"  
     return pd.read_sql(query, engine)
 df = load_data()
+df.drop(columns='index', axis=1, inplace=True)
 
 # title/header
 st.title("Store Manager Dashboard")
