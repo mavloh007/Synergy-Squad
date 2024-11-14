@@ -28,7 +28,7 @@ lstm_results = lstm_prediction(df, base_product, variation_detail)
 lstm_summary = lstm_results.dropna(subset=['Predicted Quantity'])
 st.dataframe(lstm_summary[['Description','Date','Predicted Quantity']])
 
-df, low_inventory_threshold, high_inventory_threshold = generate_inventory(df, lstm_results)
+df, low_inventory_threshold, high_inventory_threshold = generate_inventory(df, lstm_results, base_product, variation_detail)
     
 st.write("### Optimized Pricing")
 pricing_results = dynamic_pricing(df, low_inventory_threshold, high_inventory_threshold)
