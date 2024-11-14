@@ -230,6 +230,7 @@ def dynamic_pricing(df1, low_inventory_threshold, high_inventory_threshold):
     return df2
 
 def generate_inventory(df1, base_product, variation_detail):
+    df1["Date"] = pd.to_datetime(df1["Date"])
     description = df1[(df1["Base Product"] == base_product) & (df1["Variation Detail"] == variation_detail)].iloc[0]["Description"]
     predictions = df1.dropna(subset = "Predicted Quantity", ignore_index = True)
     # Function to run simulation for a given safety stock and reorder point
