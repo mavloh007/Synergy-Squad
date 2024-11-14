@@ -1,6 +1,6 @@
 # AI-Driven Merchandise Customization Platform for E-commerce
 
-## Project Description
+## Project Overview (change to a general one to include subgroup a)
 Repository for DSA3101 Synergy-Squad Subgroup B. 
 
 This repository contains resources tackling inventory management and pricing optimization of customizable products. Please refer to the wiki for more details.
@@ -14,6 +14,10 @@ This repository contains resources tackling inventory management and pricing opt
 - **store_data.db**: The database file used by the application.
 - **store_manager.py**: The main file for the Streamlit app.
 - **store_manager_functions.py**: Helper functions used by `store_manager.py`.
+
+## Data Sources
+- The data used by Subgroup A to for AI Image Synthesis and User Experience is the [Amazon Product Dataset](https://jmcauley.ucsd.edu/data/amazon/)
+- The data used by Subgroup B for Inventory Management and Pricing Optimisation originates from the Inventory and Sales Data from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/datasets/Online+Retail+II). The original dataset has been processed and the transformed data used is in the `store_data.db`.
 
 ## Requirements
 
