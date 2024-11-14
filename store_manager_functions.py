@@ -5,6 +5,7 @@ from tensorflow.keras.layers import LSTM, BatchNormalization, Dropout, Dense
 from tensorflow.keras.optimizers import RMSprop
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime, date, timedelta
 
 def lstm_prediction(df, base_product, variation_detail, seq_length=10, epochs=100, batch_size=16):
     
@@ -228,18 +229,189 @@ def dynamic_pricing(df1, low_inventory_threshold, high_inventory_threshold):
 
     return df2
 
-def generate_inventory(df):
-    """
-    Placeholder function to generate random inventory values and set quantile-based thresholds.
-    """
-    # Seed for reproducibility
-    np.random.seed(42)
+def generate_inventory(df1, predictions):
+    product_dict = df1.groupby('Base Product')['Description'].unique().apply(list).to_dict()
     
-    # Generate random inventory levels between 1 and 100 (or adjust as needed)
-    df['Inventory'] = np.random.randint(1, 101, size=len(df))
+    # Function to run simulation for a given safety stock and reorder point
+    def run_inventory_simulation(safety_stock, reorder_point, predictions_description_df, mean_demand):
+        total_holding_cost = 0
+        total_ordering_cost = 0
+        total_stockout_cost = 0
+        total_units_short = 0
+        orders_placed = 0
+        service_level = 0
+        inventory_level = safety_stock  # Starting inventory level includes safety stock
+
+        num_days = len(predictions_description_df)
+        last_date = predictions_description_df.iloc[num_days-1]["Date"]
+        
+        for i in range(num_days):
+            date = predictions_description_df.iloc[i]["Date"]
+            daily_demand = max(0, int(predictions_description_df.iloc[i]["Predicted Quantity"]))
+
+            # Check if reorder is needed
+            if inventory_level <= reorder_point:
+                # Generate a lead time for this order
+                lead_time = max(1, int(np.random.normal(mean_lead_time, std_lead_time)))
+                orders_placed += 1
+                total_ordering_cost += ordering_cost_per_unit * (reorder_point-safety_stock) # Reorder Quantity
+
+                # Add new stock after lead time
+                if date + timedelta(days = lead_time) < last_date:
+                    inventory_level += reorder_point - safety_stock # Reorder Quantity
+
+            # Calculate stockout (if any) and update inventory
+            if inventory_level >= daily_demand:
+                inventory_level -= daily_demand
+            else:
+                units_short = daily_demand - inventory_level
+                total_stockout_cost += units_short * stockout_cost_per_unit
+                total_units_short += units_short
+                inventory_level = 0
+
+            # Calculate daily holding cost
+            total_holding_cost += inventory_level * holding_cost_per_unit_per_day
+
+        # Calculate service level
+        service_level = 1 - (total_units_short / (mean_demand * num_days))
+
+        return {
+            "Total Holding Cost": total_holding_cost,
+            "Total Ordering Cost": total_ordering_cost,
+            "Total Stockout Cost": total_stockout_cost,
+            "Total Cost": total_holding_cost + total_ordering_cost + total_stockout_cost,
+            "Orders Placed": orders_placed,
+            "Service Level": service_level
+        }
+    
+    inventory_optimisation = []
+
+    ## Simulation Hyperparameter ##
+    # Cost Parameter #
+    holding_cost_per_unit_per_day = df1["Price"].mean() # Cost to hold one unit in inventory for one day (Mean Price of all products in inventory)
+
+    for base_product, descriptions in product_dict.items():
+        # print("Simulation for Base Product:", base_product)
+        product_df = df1[df1['Base Product'] == base_product].copy()
+        predictions_df = predictions[predictions["Base Product"] == base_product].copy()
+        
+        for description in descriptions:
+            # print(f"Processing Description: {description} under Base Product: {base_product}")
+            description_df = product_df[product_df['Description'] == description].drop(columns=['Description', 'Base Product'])
+            predictions_description_df = predictions_df[predictions_df["Description"] == description].drop(columns=['Description', 'Base Product'])
+                
+            ## Simulation Hyperparams ##
+            mean_demand = int(description_df["Quantity"].mean())
+            # Assumptions #
+            max_lead_time = 9
+            mean_lead_time = 5
+            std_lead_time = 2   
+                
+            # Cost parameters #
+            ordering_cost_per_unit = description_df["Price"].mean()/120*100 # Fixed order cost per unit (Assuming retail price is 120% of cost price)
+            stockout_cost_per_unit = description_df["Price"].mean() # Penalty cost for each unit not met (The retail price basically, since we do not have customer satisfaction values to include)
+            
+            # Recommended Inventory Control Metrics
+            # Safety Stock and Reorder Point Strategy
+            # using Safaety Stock = 75% Quantile of Demand During Lead Time * Max Lead Time (due to big outliers and computational resources)
+            # using Reorder Point = Mean Demand During Lead time * Mean Lead Time + Safety Stock
+            rec_safety_stock = description_df["Quantity"].quantile(q = 0.75).astype(int) * max_lead_time
+            rec_reorder_point = mean_demand * mean_lead_time + rec_safety_stock
+            
+            safety_stock_levels = range(description_df["Quantity"].quantile(q = 0.75).astype(int), rec_safety_stock+100, 100)  # Different safety stock levels to test
+                
+            ## Collect the results of running the simulation to find the optimal levels
+            results = []
+            for safety_stock in safety_stock_levels:
+                reorder_points = range(description_df["Quantity"].quantile(q = 0.75).astype(int), rec_reorder_point+50, 50)    # Different reorder points to test
+                for reorder_point in reorder_points:
+                    if (reorder_point > safety_stock):
+                        result = run_inventory_simulation(safety_stock, reorder_point, predictions_description_df, mean_demand)
+                        total_cost = result["Total Cost"]
+                        service_level = result["Service Level"]
+                        results.append({
+                        "Base Product": base_product,
+                        "Description": description,
+                        "Safety Stock": safety_stock,
+                        "Reorder Point": reorder_point,
+                        "Total Cost": total_cost,
+                        "Service Level": service_level
+            })
+            df_results = pd.DataFrame(results)
+            # print(df_results)
+                
+            ## Find the optimal Safety Stock Level and Reorder Point for each description in every base product
+            best_cost = df_results["Total Cost"].max()
+            best_service = df_results["Service Level"].min()
+            optimal_safety_stock = df_results.iloc[0]["Safety Stock"]
+            optimal_reorder_point = df_results.iloc[0]["Reorder Point"]
+                
+            for i in range(len(df_results)):
+                if (df_results.iloc[i]["Total Cost"] <= best_cost) & (df_results.iloc[i]["Service Level"] >= best_service):
+                    best_cost = df_results.iloc[i]["Total Cost"]
+                    best_service = df_results.iloc[i]["Service Level"]
+                    optimal_safety_stock = df_results.iloc[i]["Safety Stock"]
+                    optimal_reorder_point = df_results.iloc[i]["Reorder Point"]
+            # print(base_product, description, "Safety Stock:", optimal_safety_stock, "Reorder Point:", optimal_reorder_point, best_cost, best_service)
+                
+            inventory_optimisation.append({
+                "Base Product": base_product,
+                "Description": description,
+                "Safety Stock": optimal_safety_stock,
+                "Reorder Point": optimal_reorder_point
+            })
+
+    inventory_optimisation = pd.DataFrame(inventory_optimisation)
+    
+    final = []
+    df2 = predictions.copy(deep=True)
+    df2["Inventory"] = 0
+    df2["Predicted Quantity"] = df2["Predicted Quantity"].astype(int)
+    # print(df2.shape)
+
+    for i in range(len(inventory_optimisation)):
+        base_product = inventory_optimisation.iloc[i]["Base Product"]
+        description = inventory_optimisation.iloc[i]["Description"]
+        product_safety_stock = inventory_optimisation.iloc[i]["Safety Stock"]
+        product_reorder_point = inventory_optimisation.iloc[i]["Reorder Point"]
+        
+        inventory_df = df2[df2["Description"] == description].copy()
+        # print(inventory_df)
+        days = len(inventory_df)
+        max_date = inventory_df.iloc[days-1]["Date"]
+        product_inventory = product_safety_stock
+        
+        for i in range(days):
+            # Copy the current row's values
+            curr_date = inventory_df.iloc[i]["Date"]
+            product_demand = inventory_df.iloc[i]["Predicted Quantity"]  
+
+            # Check if reorder is needed
+            if product_inventory <= product_reorder_point:
+                # Generate a lead time for this order
+                lead_time = max(1, int(np.random.normal(5, 2)))
+
+                # Add new stock after lead time
+                if curr_date + timedelta(days = lead_time) < max_date:
+                    product_inventory += product_reorder_point - product_safety_stock # Reorder Quantity
+            
+            # Calculate stockout (if any) and update inventory
+            if product_inventory >= product_demand:
+                product_inventory -= product_demand
+            else:
+                product_inventory = 0
+            final.append({
+                    "Base Product": base_product,
+                    "Description": description,
+                    "Date": curr_date,
+                    "Inventory": product_inventory
+            })
+    df3 = pd.DataFrame(final)   
     
     # Calculate the lower and upper quantiles (e.g., 25th and 75th percentiles)
-    lower_threshold = df['Inventory'].quantile(0.25)
-    upper_threshold = df['Inventory'].quantile(0.75)
+    lower_threshold = df3['Inventory'].quantile(0.25)
+    upper_threshold = df3['Inventory'].quantile(0.75)
     
-    return df, lower_threshold, upper_threshold
+    df4 = df1.merge(df3, on = ["Base Product", "Description", "Date"], how = "left")
+    
+    return df4, lower_threshold, upper_threshold
