@@ -10,13 +10,13 @@ from datetime import datetime, date, timedelta
 def lstm_prediction(df, base_product, variation_detail, seq_length=10, epochs=100, batch_size=16):
     
     df_1 = df[(df['Base Product'] == base_product) & (df['Variation Detail'] == variation_detail)].copy()
+    low_q = df_1['Quantity'].quantile(0.15)
+    high_q = df_1['Quantity'].quantile(0.85)
+    df_1 = df_1[(df_1['Quantity'] >= low_q) & (df_1['Quantity'] <= high_q)]
     
     lstm = df_1.copy()
     
     # Preprocess data
-    low_q = lstm['Quantity'].quantile(0.15)
-    high_q = lstm['Quantity'].quantile(0.85)
-    lstm = lstm[(lstm['Quantity'] >= low_q) & (lstm['Quantity'] <= high_q)]
     lstm.set_index('Date', inplace=True)
     lstm['Logged_Qty'] = np.log1p(lstm['Quantity'])
     lstm['Logged_Price'] = np.log1p(lstm['Price'])
@@ -352,7 +352,9 @@ def generate_inventory(df, base_product, variation_detail):
         "Base Product": base_product,
         "Description": description,
         "Safety Stock": optimal_safety_stock,
-        "Reorder Point": optimal_reorder_point
+        "Reorder Point": optimal_reorder_point,
+        "Service Level": best_service,
+        "Total Cost": best_cost
     }
 
     final = []
@@ -364,6 +366,8 @@ def generate_inventory(df, base_product, variation_detail):
     description = inventory_optimisation["Description"]
     product_safety_stock = inventory_optimisation["Safety Stock"]
     product_reorder_point = inventory_optimisation["Reorder Point"]
+    best_service = inventory_optimisation["Service Level"]
+    best_cost = inventory_optimisation["Total Cost"].round(0).astype(int)
         
     days = len(df2)
     max_date = df2.iloc[days-1]["Date"]
@@ -392,7 +396,9 @@ def generate_inventory(df, base_product, variation_detail):
             "Base Product": base_product,
             "Description": description,
             "Date": curr_date,
-            "Inventory": product_inventory
+            "Inventory": product_inventory,
+            "Safety Stock": product_safety_stock,
+            "Optimal Cost": best_cost
         })
     df3 = pd.DataFrame(final) 
     

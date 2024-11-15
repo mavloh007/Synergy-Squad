@@ -12,7 +12,6 @@ def load_data():
     query = "SELECT * FROM product_data"  
     return pd.read_sql(query, engine)
 df = load_data()
-df.drop(columns='index', axis=1, inplace=True)
 
 # title/header
 st.title("Store Manager Dashboard")
@@ -30,7 +29,11 @@ lstm_summary = lstm_results.dropna(subset=['Predicted Quantity'])
 st.dataframe(lstm_summary[['Description','Date','Predicted Quantity']])
 
 df, low_inventory_threshold, high_inventory_threshold = generate_inventory(lstm_results, base_product, variation_detail)
-    
+st.write("### Inventory Management")
+df_inventory = df.copy()
+df_inventory = df_inventory.dropna(subset=['Inventory'])
+st.dataframe(df_inventory[['Date', 'Inventory', 'Safety Stock', 'Optimal Cost']])
+
 st.write("### Optimized Pricing")
 pricing_results = dynamic_pricing(df, low_inventory_threshold, high_inventory_threshold)
 st.dataframe(pricing_results[['Date', 'Predicted Quantity', 'Optimized Price', 'Optimized Predicted Revenue']])
