@@ -32,7 +32,7 @@ df, low_inventory_threshold, high_inventory_threshold = generate_inventory(lstm_
 st.write("### Inventory Management")
 df_inventory = df.copy()
 df_inventory = df_inventory.dropna(subset=['Inventory'])
-st.dataframe(df_inventory[['Date', 'Inventory', 'Safety Stock', 'Optimal Cost']])
+st.dataframe(df_inventory[['Date', 'Inventory', 'Safety Stock', 'Daily Cost']])
 
 st.write("### Optimized Pricing")
 pricing_results = dynamic_pricing(df, low_inventory_threshold, high_inventory_threshold)

@@ -288,7 +288,8 @@ def generate_inventory(df, base_product, variation_detail):
     
     ## Simulation Hyperparameter ##
     # Cost Parameter #
-    holding_cost_per_unit_per_day = df1["Price"].mean() # Cost to hold one unit in inventory for one day (Mean Price of all products in inventory)
+    holding_cost_per_unit_per_day = df1["Price"].mean()*0.15 # Cost to hold one unit in inventory for one day (15% of retail price)
+    # Estimated by holding cost formula = 15% of annual value of inventory
     
     product_df = df1[df1['Base Product'] == base_product].copy()
     predictions_df = predictions[predictions["Base Product"] == base_product].copy()
@@ -304,7 +305,7 @@ def generate_inventory(df, base_product, variation_detail):
     std_lead_time = 2   
                 
     # Cost parameters #
-    ordering_cost_per_unit = description_df["Price"].mean()/120*100 # Fixed order cost per unit (Assuming retail price is 120% of cost price)
+    ordering_cost_per_unit = description_df["Price"].mean()/2 # Fixed order cost per unit (Assuming retail price is 200% of cost price)
     stockout_cost_per_unit = description_df["Price"].mean() # Penalty cost for each unit not met (The retail price basically, since we do not have customer satisfaction values to include)
             
     # Recommended Inventory Control Metrics
@@ -366,23 +367,25 @@ def generate_inventory(df, base_product, variation_detail):
     description = inventory_optimisation["Description"]
     product_safety_stock = inventory_optimisation["Safety Stock"]
     product_reorder_point = inventory_optimisation["Reorder Point"]
-    best_service = inventory_optimisation["Service Level"]
-    best_cost = inventory_optimisation["Total Cost"].round(0).astype(int)
-        
+    
     days = len(df2)
     max_date = df2.iloc[days-1]["Date"]
     product_inventory = product_safety_stock
-        
+    
     for i in range(days):
         # Copy the current row's values
         curr_date = df2.iloc[i]["Date"]
         product_demand = df2.iloc[i]["Predicted Quantity"]  
 
+        daily_ordering_cost = 0
+        daily_holding_cost = 0
+        daily_stockout_cost = 0
         # Check if reorder is needed
         if product_inventory <= product_reorder_point:
             # Generate a lead time for this order
             lead_time = max(1, int(np.random.normal(5, 2)))
-
+            daily_ordering_cost =  ordering_cost_per_unit * (product_reorder_point-product_safety_stock) # Reorder Quantity
+            
             # Add new stock after lead time
             if curr_date + timedelta(days = lead_time) < max_date:
                 product_inventory += product_reorder_point - product_safety_stock # Reorder Quantity
@@ -391,14 +394,20 @@ def generate_inventory(df, base_product, variation_detail):
         if product_inventory >= product_demand:
             product_inventory -= product_demand
         else:
+            units_short = product_demand - product_inventory
+            daily_stockout_cost = units_short * stockout_cost_per_unit
             product_inventory = 0
+            
+        daily_holding_cost = product_inventory * holding_cost_per_unit_per_day
+        daily_cost = daily_ordering_cost + daily_holding_cost + daily_stockout_cost
+        
         final.append({
             "Base Product": base_product,
             "Description": description,
             "Date": curr_date,
             "Inventory": product_inventory,
             "Safety Stock": product_safety_stock,
-            "Optimal Cost": best_cost
+            "Daily Cost": int(daily_cost)
         })
     df3 = pd.DataFrame(final) 
     
